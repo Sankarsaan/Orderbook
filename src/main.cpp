@@ -1,33 +1,60 @@
 #include "../include/orderbook.hpp"
+#include "../include/spsc_queue.hpp"
+#include "../include/order_command.hpp"
 #include <iostream>
+#include <thread>
 #include <chrono>
 
-int main() {
-    OrderBook book;
-    const int NUM_ORDERS = 1000000;
+using namespace std;
 
-    std::cout << "Generating and matching " << NUM_ORDERS << " orders...\n";
+void network_producer(SPSCRingBuffer<OrderCommand>& ring_buffer, int num_orders) {
+    for (int i = 0; i < num_orders; ++i) {
+        OrderCommand cmd;
+        cmd.id = i + 1;
+        cmd.side = (i % 2 == 0) ? Side::BUY : Side::SELL;
+        cmd.type = OrderType::LIMIT;
+        cmd.price = 100.0 + (i % 10);
+        cmd.qty = 10;
 
-    auto start = std::chrono::high_resolution_clock::now();
-
-    for (int i = 0; i < NUM_ORDERS; ++i) {
-        Side side = (i % 2 == 0) ? Side::BUY : Side::SELL;
-        double price = 100.0 + (i % 10); // Spreads orders across prices $100 - $109
-        uint32_t qty = 10;
-        
-        book.add_order(i, side, OrderType::LIMIT, price, qty);
-        
-        // Simulate aggressive cancellations
-        if (i % 5 == 0) {
-            book.cancel_order(i - 1); 
+        while (!ring_buffer.push(cmd)) {
+            
         }
     }
+}
 
-    auto end = std::chrono::high_resolution_clock::now();
-    std::chrono::duration<double, std::milli> duration = end - start;
+void engine_consumer(SPSCRingBuffer<OrderCommand>& ring_buffer, OrderBook& book, int num_orders) {
+    int processed = 0;
+    OrderCommand cmd;
 
-    std::cout << "Time elapsed: " << duration.count() << " ms\n";
-    std::cout << "Throughput: " << (NUM_ORDERS / (duration.count() / 1000.0)) << " ops/sec\n";
+    while (processed < num_orders) {
+        if (ring_buffer.pop(cmd)) {
+            book.add_order(cmd.id, cmd.side, cmd.type, cmd.price, cmd.qty);
+            processed++;
+        }
+    }
+}
+
+int main() {
+    const int NUM_ORDERS = 1000000;
+    const int QUEUE_CAPACITY = 65536;
+
+    SPSCRingBuffer<OrderCommand> ring_buffer(QUEUE_CAPACITY);
+    OrderBook book(2000000);
+
+    auto start = chrono::high_resolution_clock::now();
+
+    thread producer_thread(network_producer, ref(ring_buffer), NUM_ORDERS);
+    thread consumer_thread(engine_consumer, ref(ring_buffer), ref(book), NUM_ORDERS);
+
+    producer_thread.join();
+    consumer_thread.join();
+
+    auto end = chrono::high_resolution_clock::now();
+    chrono::duration<double, nano> elapsed = end - start;
+
+    cout << "Processed " << NUM_ORDERS << " orders through SPSC pipeline.\n";
+    cout << "Total pipeline time: " << elapsed.count() / 1000000.0 << " ms\n";
+    cout << "Average latency per order: " << elapsed.count() / NUM_ORDERS << " ns\n";
 
     return 0;
 }
