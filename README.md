@@ -54,6 +54,12 @@ Benchmarking was conducted locally using a custom `std::chrono` high-resolution 
 * **BM_AddLimitOrder (1,000,000 iterations):** ~164 ns / operation
 * **BM_MarketOrderSweep (100,000 iterations):** ~80 ns / operation
 
+
+## Concurrency: Lock-Free SPSC Ring Buffer
+To simulate a real-world exchange pipeline, this engine operates across two independent threads: a Network thread (Producer) and a Matching Engine thread (Consumer). 
+
+To avoid the massive latency overhead of OS-level `std::mutex` locks, the threads communicate exclusively through a custom Lock-Free Single-Producer Single-Consumer (SPSC) Ring Buffer. By utilizing C++17 `std::atomic` memory orders (`acquire` and `release`) and aligning pointers to 64-byte boundaries to prevent False Sharing, the system achieves safe, concurrent order routing in ~317 nanoseconds end-to-end.
+
 ## Build Instructions
 
 This project requires a C++17 compatible compiler (GCC/Clang).
