@@ -1,5 +1,5 @@
 CXX = g++
-CXXFLAGS = -std=c++17 -O3 -march=native -Wall -Iinclude
+CXXFLAGS = -std=c++17 -O3 -march=native -Wall -pthread -Iinclude
 
 all: engine run_benchmarks
 
